@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sillpark – Abfahrten</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #020617;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #111827;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      position: relative;
+      z-index: 10;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    #updated {
+      font-size: 0.85rem;
+      opacity: 0.7;
+    }
+
+    /* Fixed scroll container */
+    main#scroll-container {
+      flex: 1;
+      padding: 16px 24px;
+      overflow: hidden;
+      position: relative;
+      z-index: 5;
+    }
+
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card {
+      padding: 14px 18px;
+      border-radius: 12px;
+      background: #030712;
+      border: 1px solid #111827;
+      display: grid;
+      grid-template-columns: 160px 1fr 70px; /* times | text | badge */
+      column-gap: 16px;
+      align-items: center;
+      min-height: 80px;
+    }
+
+    /* Left column: times */
+    .times {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-start;
+    }
+
+    .time-main {
+      font-size: 2.2rem;
+      line-height: 1;
+      font-weight: 600;
+    }
+    .time-planned { color: #ffffff; }
+    .time-rt { color: #f97373; }
+
+    /* Middle column: text */
+    .info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      text-align: left;
+    }
+
+    .line-dest {
+      font-size: 1.1rem;
+      font-weight: 500;
+    }
+
+    .meta {
+      font-size: 0.85rem;
+      opacity: 0.7;
+    }
+
+    /* Right column: badge icon */
+    .badge-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .badge-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      background: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+    }
+
+    .badge-label {
+      margin-top: 4px;
+      font-size: 0.75rem;
+      opacity: 0.8;
+      text-align: center;
+    }
+
+    .error {
+      color: #f97373;
+      font-size: 1.1rem;
+    }
+
+    /* --- Snowflake Effect --- */
+    .snowflake {
+      position: fixed;
+      top: -10px;
+      color: #ffffff80;
+      font-size: 1rem;
+      pointer-events: none;
+      user-select: none;
+      animation-name: fall;
+      animation-timing-function: linear;
+      z-index: 20;
+    }
+
+    @keyframes fall {
+      0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(110vh) rotate(360deg); opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Innsbruck Sillpark – Abfahrten</h1>
+    <div id="updated">Lade Daten…</div>
+  </header>
+
+  <main id="scroll-container">
+    <div id="cards" class="cards"></div>
+  </main>
+
+  <script>
+    let scrollRaf = null;
+
+    function setupAutoScroll() {
+      const container = document.getElementById('scroll-container');
+      const cardsEl = document.getElementById('cards');
+      const cards = cardsEl.querySelectorAll('.card');
+
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      container.scrollTop = 0;
+
+      if (!cards.length) return;
+
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      if (maxScroll <= 0) return;
+
+      let pos = 0;
+      const speed = 0.35;
+
+      function step() {
+        pos += speed;
+        if (pos >= maxScroll + 40) pos = 0;
+        container.scrollTop = pos;
+        scrollRaf = requestAnimationFrame(step);
+      }
+
+      scrollRaf = requestAnimationFrame(step);
+    }
+
+    function getBadgeIcon(tramText) {
+      if (!tramText) return '🚉';
+      const t = tramText.toLowerCase();
+      if (t.startsWith('tram')) return '🚋';
+      if (t.startsWith('bus')) return '🚌';
+      return '🚉';
+    }
+
+    function getBadgeLabel(tramText) {
+      return tramText || '';
+    }
+
+    async function loadJourneys() {
+      const updatedEl = document.getElementById('updated');
+      const cardsEl = document.getElementById('cards');
+
+      try {
+        const res = await fetch('/api/journeys');
+        const data = await res.json();
+
+        cardsEl.innerHTML = '';
+
+        if (!res.ok) {
+          cardsEl.innerHTML = `<div class="error">${data.message || data.error}</div>`;
+          setupAutoScroll();
+          return;
+        }
+
+        const journeys = data.journeys || [];
+
+        journeys.forEach(j => {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          // LEFT COLUMN – times
+          const times = document.createElement('div');
+          times.className = 'times';
+
+          const planned = document.createElement('div');
+          planned.className = 'time-main time-planned';
+          planned.textContent = j.departure || '--:--';
+          times.appendChild(planned);
+
+          if (j.status === 'delayed' && j.realtimeTime && j.realtimeTime !== j.departure) {
+            const rt = document.createElement('div');
+            rt.className = 'time-main time-rt';
+            rt.textContent = j.realtimeTime;
+            times.appendChild(rt);
+          }
+
+          // MIDDLE COLUMN – text
+          const info = document.createElement('div');
+          info.className = 'info';
+
+          const lineDest = document.createElement('div');
+          lineDest.className = 'line-dest';
+          const destText = (j.to || '').replace('Innsbruck ', '');
+          lineDest.textContent = `${j.tram || ''} → ${destText || '–'}`;
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.textContent = `ab ${j.from || 'Sillpark'} · ${j.date || ''}`;
+
+          info.appendChild(lineDest);
+          info.appendChild(meta);
+
+          // RIGHT COLUMN – tram/bus icon
+          const badgeWrap = document.createElement('div');
+          badgeWrap.className = 'badge-wrap';
+
+          const badgeIcon = document.createElement('div');
+          badgeIcon.className = 'badge-icon';
+          badgeIcon.textContent = getBadgeIcon(j.tram);
+
+          const badgeLabel = document.createElement('div');
+          badgeLabel.className = 'badge-label';
+          badgeLabel.textContent = getBadgeLabel(j.tram);
+
+          badgeWrap.appendChild(badgeIcon);
+          badgeWrap.appendChild(badgeLabel);
+
+          card.appendChild(times);
+          card.appendChild(info);
+          card.appendChild(badgeWrap);
+
+          cardsEl.appendChild(card);
+        });
+
+        updatedEl.textContent =
+          'Zuletzt aktualisiert: ' +
+          new Date(data.updatedAt || Date.now()).toLocaleTimeString();
+
+        setupAutoScroll();
+      } catch (err) {
+        cardsEl.innerHTML = '<div class="error">Fehler beim Laden.</div>';
+        setupAutoScroll();
+      }
+    }
+
+    loadJourneys();
+    setInterval(loadJourneys, 15000);
+
+    /* --- Snowflake generator --- */
+    const snowContainer = document.createElement('div');
+    document.body.appendChild(snowContainer);
+
+    function createSnowflake() {
+      const snowflake = document.createElement('div');
+      snowflake.className = 'snowflake';
+      snowflake.textContent = '❄';
+
+      snowflake.style.left = Math.random() * 100 + 'vw';
+      snowflake.style.fontSize = (0.6 + Math.random() * 1.4) + 'rem';
+      const duration = 4 + Math.random() * 6;
+      snowflake.style.animationDuration = duration + 's';
+      snowContainer.appendChild(snowflake);
+
+      setTimeout(() => snowflake.remove(), duration * 1000);
+    }
+
+    setInterval(createSnowflake, 300);
+  </script>
+</body>
+</html>
