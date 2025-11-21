@@ -242,7 +242,7 @@
           const lineDest = document.createElement('div');
           lineDest.className = 'line-dest';
           const destText = (j.to || '').replace('Innsbruck ', '');
-          lineDest.textContent = `${j.tram || ''} → ${destText || '–'}`;
+          lineDest.textContent = `${j.tram || ''}: ${destText || '–'}`;
 
           const meta = document.createElement('div');
           meta.className = 'meta';
@@ -263,7 +263,7 @@
           badgeLabel.className = 'badge-label';
           badgeLabel.textContent = getBadgeLabel(j.tram);
 
-          badgeWrap.appendChild(badgeIcon);
+          //badgeWrap.appendChild(badgeIcon);
           badgeWrap.appendChild(badgeLabel);
 
           card.appendChild(times);
