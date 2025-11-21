@@ -21,7 +21,7 @@
       border-bottom: 1px solid #111827;
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: center;
       position: relative;
       z-index: 10;
     }
@@ -35,7 +35,17 @@
       opacity: 0.7;
     }
 
-    /* Fixed scroll container */
+    /* Center clock in header */
+    #current-time {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.1rem;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.9;
+    }
+
     main#scroll-container {
       flex: 1;
       padding: 16px 24px;
@@ -56,7 +66,7 @@
       background: #030712;
       border: 1px solid #111827;
       display: grid;
-      grid-template-columns: 160px 1fr 70px; /* times | text | badge */
+      grid-template-columns: 160px 1fr 80px;
       column-gap: 16px;
       align-items: center;
       min-height: 80px;
@@ -96,30 +106,25 @@
       opacity: 0.7;
     }
 
-    /* Right column: badge icon */
-    .badge-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+    /* ETA */
+    .eta {
+      justify-self: flex-end;
+      font-size: 1rem;
+      font-weight: 500;
+      text-align: right;
+      white-space: nowrap;
     }
 
-    .badge-icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 999px;
-      background: #111827;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.6rem;
+    .eta-soon {
+      color: #22c55e;
     }
 
-    .badge-label {
-      margin-top: 4px;
-      font-size: 0.75rem;
-      opacity: 0.8;
-      text-align: center;
+    .eta-now {
+      color: #facc15;
+    }
+
+    .eta-past {
+      color: #9ca3af;
     }
 
     .error {
@@ -127,7 +132,7 @@
       font-size: 1.1rem;
     }
 
-    /* --- Snowflake Effect --- */
+    /* Snowflake Effect */
     .snowflake {
       position: fixed;
       top: -10px;
@@ -135,8 +140,7 @@
       font-size: 1rem;
       pointer-events: none;
       user-select: none;
-      animation-name: fall;
-      animation-timing-function: linear;
+      animation: fall linear;
       z-index: 20;
     }
 
@@ -149,6 +153,7 @@
 <body>
   <header>
     <h1>Innsbruck Sillpark – Abfahrten</h1>
+    <div id="current-time">--:--:--</div>
     <div id="updated">Lade Daten…</div>
   </header>
 
@@ -157,44 +162,66 @@
   </main>
 
   <script>
-    let scrollRaf = null;
+    /* Clock */
+    function updateClock() {
+      const clockEl = document.getElementById('current-time');
+      const now = new Date();
+      clockEl.textContent = now.toLocaleTimeString('de-AT', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
 
-    function setupAutoScroll() {
-      const container = document.getElementById('scroll-container');
-      const cardsEl = document.getElementById('cards');
-      const cards = cardsEl.querySelectorAll('.card');
+    function parseTimeToDate(dateStr, timeStr) {
+      if (!timeStr) return null;
+      const [h, m] = timeStr.split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
 
-      if (scrollRaf) cancelAnimationFrame(scrollRaf);
-      container.scrollTop = 0;
+      const now = new Date();
+      let d;
 
-      if (!cards.length) return;
-
-      const maxScroll = container.scrollHeight - container.clientHeight;
-      if (maxScroll <= 0) return;
-
-      let pos = 0;
-      const speed = 0.35;
-
-      function step() {
-        pos += speed;
-        if (pos >= maxScroll + 40) pos = 0;
-        container.scrollTop = pos;
-        scrollRaf = requestAnimationFrame(step);
+      if (dateStr) {
+        const parsed = new Date(dateStr);
+        if (!Number.isNaN(parsed.getTime())) {
+          d = parsed;
+        } else {
+          d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        }
+      } else {
+        d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       }
 
-      scrollRaf = requestAnimationFrame(step);
+      d.setHours(h, m, 0, 0);
+      return d;
     }
 
-    function getBadgeIcon(tramText) {
-      if (!tramText) return '🚉';
-      const t = tramText.toLowerCase();
-      if (t.startsWith('tram')) return '🚋';
-      if (t.startsWith('bus')) return '🚌';
-      return '🚉';
-    }
+    function formatEta(journey) {
+      const targetTime =
+        journey.status === 'delayed' && journey.realtimeTime
+          ? journey.realtimeTime
+          : journey.departure;
 
-    function getBadgeLabel(tramText) {
-      return tramText || '';
+      const dt = parseTimeToDate(journey.date, targetTime);
+      if (!dt) return { text: '–', className: '' };
+
+      const now = new Date();
+      const diffMs = dt.getTime() - now.getTime();
+      const diffMin = Math.round(diffMs / 60000);
+
+      if (diffMin <= -1) {
+        return { text: 'abgefahren', className: 'eta-past' };
+      } else if (diffMin === 0) {
+        return { text: 'jetzt', className: 'eta-now' };
+      } else if (diffMin === 1) {
+        return { text: 'in 1 Min', className: 'eta-soon' };
+      } else if (diffMin <= 5) {
+        return { text: `in ${diffMin} Min`, className: 'eta-soon' };
+      } else {
+        return { text: `in ${diffMin} Min`, className: '' };
+      }
     }
 
     async function loadJourneys() {
@@ -209,7 +236,6 @@
 
         if (!res.ok) {
           cardsEl.innerHTML = `<div class="error">${data.message || data.error}</div>`;
-          setupAutoScroll();
           return;
         }
 
@@ -219,7 +245,6 @@
           const card = document.createElement('div');
           card.className = 'card';
 
-          // LEFT COLUMN – times
           const times = document.createElement('div');
           times.className = 'times';
 
@@ -235,7 +260,6 @@
             times.appendChild(rt);
           }
 
-          // MIDDLE COLUMN – text
           const info = document.createElement('div');
           info.className = 'info';
 
@@ -251,43 +275,34 @@
           info.appendChild(lineDest);
           info.appendChild(meta);
 
-          // RIGHT COLUMN – tram/bus icon
-          const badgeWrap = document.createElement('div');
-          badgeWrap.className = 'badge-wrap';
-
-          const badgeIcon = document.createElement('div');
-          badgeIcon.className = 'badge-icon';
-          badgeIcon.textContent = getBadgeIcon(j.tram);
-
-          const badgeLabel = document.createElement('div');
-          badgeLabel.className = 'badge-label';
-          badgeLabel.textContent = getBadgeLabel(j.tram);
-
-          //badgeWrap.appendChild(badgeIcon);
-          badgeWrap.appendChild(badgeLabel);
+          const etaInfo = formatEta(j);
+          const etaEl = document.createElement('div');
+          etaEl.className = 'eta ' + etaInfo.className;
+          etaEl.textContent = etaInfo.text;
 
           card.appendChild(times);
           card.appendChild(info);
-          card.appendChild(badgeWrap);
+          card.appendChild(etaEl);
 
           cardsEl.appendChild(card);
         });
 
         updatedEl.textContent =
           'Zuletzt aktualisiert: ' +
-          new Date(data.updatedAt || Date.now()).toLocaleTimeString();
-
-        setupAutoScroll();
+          new Date(data.updatedAt || Date.now()).toLocaleTimeString('de-AT', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
       } catch (err) {
         cardsEl.innerHTML = '<div class="error">Fehler beim Laden.</div>';
-        setupAutoScroll();
       }
     }
 
     loadJourneys();
     setInterval(loadJourneys, 15000);
 
-    /* --- Snowflake generator --- */
+    /* Snowflakes */
     const snowContainer = document.createElement('div');
     document.body.appendChild(snowContainer);
 
