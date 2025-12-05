@@ -9,22 +9,27 @@ const PORT = 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const SILLPARK_EVA_ID = 1370165; // Innsbruck Sillpark
+/**
+ * Define the stations you want to rotate through.
+ * Replace evaIds with the real ones you need.
+ */
+const STATIONS = [
+  { evaId: 1370165, label: 'Innsbruck Sillpark' },
+  { evaId: 8100108, label: 'Innsbruck Hauptbahnhof' }
+];
 
-let latestJourneys = [];
-let lastUpdate = null;
-let lastError = null;
+// Cache for station boards: evaId -> { journeys, lastUpdate, lastError }
+const stationBoards = new Map();
 
-async function fetchSillparkBoard() {
+async function fetchStationBoard(station) {
   try {
     const options = oebb.getStationBoardDataOptions();
-    options.evaId = SILLPARK_EVA_ID;
+    options.evaId = station.evaId;
 
     const boardData = await oebb.getStationBoardData(options);
-
     const journeys = boardData.journey || [];
 
-    latestJourneys = journeys.map(journey => {
+    const mappedJourneys = journeys.map(journey => {
       const rt = journey.rt || {};
 
       let status = 'on-time';
@@ -38,7 +43,7 @@ async function fetchSillparkBoard() {
         departure: journey.ti,         // planned time
         date: journey.da,
         tram: journey.pr,              // line / train name
-        from: journey.st,              // station (Sillpark)
+        from: journey.st,              // station
         to: journey.lastStop,          // final destination
         status,                        // 'on-time' | 'delayed' | 'cancelled'
         delayMinutes: rt.dlm || 0,     // delay in minutes, if any
@@ -46,29 +51,63 @@ async function fetchSillparkBoard() {
       };
     });
 
-    lastUpdate = new Date();
-    lastError = null;
-    console.log('Updated Sillpark board at', lastUpdate.toISOString());
+    stationBoards.set(station.evaId, {
+      journeys: mappedJourneys,
+      lastUpdate: new Date(),
+      lastError: null
+    });
+
+    console.log(
+      `Updated board for ${station.label} (${station.evaId}) at`,
+      new Date().toISOString()
+    );
   } catch (error) {
-    console.error('Error fetching station board data:', error);
-    lastError = error.message || String(error);
+    console.error(
+      `Error fetching station board data for ${station.label} (${station.evaId}):`,
+      error
+    );
+
+    const current = stationBoards.get(station.evaId) || {};
+    stationBoards.set(station.evaId, {
+      journeys: current.journeys || [],
+      lastUpdate: current.lastUpdate || null,
+      lastError: error.message || String(error)
+    });
   }
 }
 
-// First run immediately, then every minute
-await fetchSillparkBoard();
-setInterval(fetchSillparkBoard, 60_000);
+// Initial fetch for all stations, then refresh every minute
+for (const station of STATIONS) {
+  await fetchStationBoard(station);
+  setInterval(() => fetchStationBoard(station), 60_000);
+}
 
-// API endpoint for frontend
+// List stations for the frontend
+app.get('/api/stations', (req, res) => {
+  res.json({ stations: STATIONS });
+});
+
+// Journeys for a specific station (?evaId=...)
 app.get('/api/journeys', (req, res) => {
-  if (!latestJourneys.length && lastError) {
+  const evaId = Number(req.query.evaId) || STATIONS[0].evaId;
+  const board = stationBoards.get(evaId);
+
+  if (!board) {
+    return res.status(404).json({
+      message: 'Noch keine Verbindungen gefunden (Station nicht geladen).'
+    });
+  }
+
+  const { journeys, lastUpdate, lastError } = board;
+
+  if (!journeys.length && lastError) {
     return res.status(500).json({
       error: 'Error fetching station board data.',
       details: lastError
     });
   }
 
-  if (!latestJourneys.length) {
+  if (!journeys.length) {
     return res.status(404).json({
       message: 'Aktuell keine Verbindungen gefunden.'
     });
@@ -76,7 +115,7 @@ app.get('/api/journeys', (req, res) => {
 
   res.json({
     updatedAt: lastUpdate,
-    journeys: latestJourneys
+    journeys
   });
 });
 
@@ -84,5 +123,5 @@ app.get('/api/journeys', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
-  console.log(`Sillpark display running at http://localhost:${PORT}`);
+  console.log(`Sill display running at http://localhost:${PORT}`);
 });

@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Sillpark – Abfahrten</title>
+  <title>Sill Display – Abfahrten</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -17,22 +17,39 @@
     }
 
     header {
-      padding: 16px 24px;
+      padding: 16px 24px 8px;
       border-bottom: 1px solid #111827;
       display: flex;
       justify-content: space-between;
       align-items: center;
       position: relative;
       z-index: 10;
+      flex-direction: row;
+      gap: 16px;
     }
+
+    header-left {
+      display: flex;
+    }
+
     header h1 {
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.4rem;
       font-weight: 600;
     }
+
+    #station-name {
+      display: block;
+      font-size: 1.1rem;
+      font-weight: 500;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
     #updated {
       font-size: 0.85rem;
       opacity: 0.7;
+      text-align: right;
     }
 
     /* Center clock in header */
@@ -44,6 +61,23 @@
       font-size: 1.1rem;
       font-variant-numeric: tabular-nums;
       opacity: 0.9;
+    }
+
+    /* Station rotation progress bar */
+    .station-progress-container {
+      position: relative;
+      width: 100%;
+      height: 4px;
+      background: #020617;
+      border-top: 1px solid #111827;
+      overflow: hidden;
+    }
+
+    .station-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(to right, #22c55e, #facc15, #ef4444);
+      transform-origin: left center;
     }
 
     main#scroll-container {
@@ -72,7 +106,6 @@
       min-height: 80px;
     }
 
-    /* Left column: times */
     .times {
       display: flex;
       flex-direction: column;
@@ -88,7 +121,6 @@
     .time-planned { color: #ffffff; }
     .time-rt { color: #f97373; }
 
-    /* Middle column: text */
     .info {
       display: flex;
       flex-direction: column;
@@ -106,7 +138,6 @@
       opacity: 0.7;
     }
 
-    /* ETA */
     .eta {
       justify-self: flex-end;
       font-size: 1rem;
@@ -132,7 +163,6 @@
       font-size: 1.1rem;
     }
 
-    /* Snowflake Effect */
     .snowflake {
       position: fixed;
       top: -10px;
@@ -152,16 +182,30 @@
 </head>
 <body>
   <header>
-    <h1>Innsbruck Sillpark – Abfahrten</h1>
+    <div>
+      <h1>Sill Display – Abfahrten</h1>
+      <span id="station-name">Lade Station…</span>
+    </div>
     <div id="current-time">--:--:--</div>
     <div id="updated">Lade Daten…</div>
   </header>
+
+  <!-- Station rotation progress line -->
+  <div class="station-progress-container">
+    <div id="station-progress-bar" class="station-progress-bar"></div>
+  </div>
 
   <main id="scroll-container">
     <div id="cards" class="cards"></div>
   </main>
 
   <script>
+    const ROTATION_MS = 10_000;
+    const REFRESH_MS = 15_000;
+
+    let stations = [];
+    let currentStationIndex = 0;
+
     /* Clock */
     function updateClock() {
       const clockEl = document.getElementById('current-time');
@@ -224,12 +268,12 @@
       }
     }
 
-    async function loadJourneys() {
+    async function loadJourneysForStation(evaId) {
       const updatedEl = document.getElementById('updated');
       const cardsEl = document.getElementById('cards');
 
       try {
-        const res = await fetch('/api/journeys');
+        const res = await fetch(`/api/journeys?evaId=${encodeURIComponent(evaId)}`);
         const data = await res.json();
 
         cardsEl.innerHTML = '';
@@ -270,7 +314,7 @@
 
           const meta = document.createElement('div');
           meta.className = 'meta';
-          meta.textContent = `ab ${j.from || 'Sillpark'} · ${j.date || ''}`;
+          meta.textContent = `ab ${j.from || ''} · ${j.date || ''}`;
 
           info.appendChild(lineDest);
           info.appendChild(meta);
@@ -299,8 +343,61 @@
       }
     }
 
-    loadJourneys();
-    setInterval(loadJourneys, 15000);
+    function restartProgressAnimation() {
+      const bar = document.getElementById('station-progress-bar');
+      bar.style.transition = 'none';
+      bar.style.width = '0%';
+
+      // force reflow
+      void bar.offsetWidth;
+
+      bar.style.transition = `width ${ROTATION_MS}ms linear`;
+      bar.style.width = '100%';
+    }
+
+    function switchStation(index) {
+      if (!stations.length) return;
+      currentStationIndex = index % stations.length;
+      const station = stations[currentStationIndex];
+
+      const stationNameEl = document.getElementById('station-name');
+      stationNameEl.textContent = station.label;
+
+      restartProgressAnimation();
+      loadJourneysForStation(station.evaId);
+    }
+
+    async function initStations() {
+      try {
+        const res = await fetch('/api/stations');
+        const data = await res.json();
+        stations = data.stations || [];
+
+        if (!stations.length) {
+          document.getElementById('station-name').textContent = 'Keine Stationen konfiguriert';
+          return;
+        }
+
+        // Start with first station
+        switchStation(0);
+
+        // Rotate station every 10 seconds
+        setInterval(() => {
+          switchStation((currentStationIndex + 1) % stations.length);
+        }, ROTATION_MS);
+
+        // Refresh journeys for current station every 15s
+        setInterval(() => {
+          if (!stations.length) return;
+          const current = stations[currentStationIndex];
+          loadJourneysForStation(current.evaId);
+        }, REFRESH_MS);
+      } catch (e) {
+        document.getElementById('station-name').textContent = 'Fehler beim Laden der Stationen';
+      }
+    }
+
+    initStations();
 
     /* Snowflakes */
     const snowContainer = document.createElement('div');
