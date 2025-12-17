@@ -122,6 +122,6 @@ app.get('/api/journeys', (req, res) => {
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.listen(PORT, () => {
-  console.log(`Sill display running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Sill display running at http://0.0.0.0:${PORT}`);
 });

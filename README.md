@@ -19,6 +19,7 @@ to fetch live data.
 - 📜 Smooth auto-scrolling departure list for longer boards
 - ❄️ Optional winter mode: **falling snowflakes** for Christmas vibes
 - 🎛 Designed to run in **Chromium kiosk mode** on a Raspberry Pi
+- 🐳 **Docker deployment** with automatic updates via Watchtower
 
 ---
 
@@ -30,18 +31,184 @@ Typical repo structure:
 silldisplay/
 ├── package.json
 ├── server.mjs
+├── Dockerfile
+├── docker-compose.yml
+├── .github/workflows/docker-build.yml
 └── public/
     └── index.html
 ```
 
 - **`server.mjs`** – Node.js server, uses `oebb-api` to fetch departures and exposes `/api/journeys`
 - **`public/index.html`** – Frontend, fetches `/api/journeys` and renders the display
-
-Your repository should already contain these files.
+- **`Dockerfile`** – Container definition for the application
+- **`docker-compose.yml`** – Docker Compose configuration with Watchtower for auto-updates
 
 ---
 
-## 1. Requirements
+## Deployment Options
+
+This project supports two deployment methods:
+
+1. **[Docker Deployment (Recommended)](#docker-deployment)** – Easy setup with automatic updates via Watchtower
+2. **[Manual Deployment](#manual-deployment)** – Traditional systemd service setup
+
+---
+
+## Docker Deployment
+
+This is the recommended method for Raspberry Pi 5. It uses Docker and Watchtower to automatically update the application when new versions are pushed to GitHub.
+
+### Prerequisites
+
+- Raspberry Pi 5 with **Raspberry Pi OS** (64-bit recommended)
+- Internet connection
+- Docker and Docker Compose installed
+- GitHub repository with GitHub Actions enabled
+
+### Step 1: Install Docker on Raspberry Pi
+
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Add your user to docker group (replace 'pi' with your username)
+sudo usermod -aG docker pi
+
+# Install Docker Compose
+sudo apt install -y docker-compose-plugin
+
+# Log out and back in, or run:
+newgrp docker
+
+# Verify installation
+docker --version
+docker compose version
+```
+
+### Step 2: Configure GitHub Container Registry Access
+
+The Docker image will be built and pushed to GitHub Container Registry (GHCR) automatically via GitHub Actions. On your Raspberry Pi, you need to authenticate to pull the image.
+
+1. **Create a GitHub Personal Access Token (PAT)**:
+   - Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Generate a new token with `read:packages` permission
+   - Copy the token
+
+2. **Login to GHCR on your Raspberry Pi**:
+
+```bash
+echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+Replace:
+- `YOUR_GITHUB_TOKEN` with your PAT
+- `YOUR_GITHUB_USERNAME` with your GitHub username
+
+### Step 3: Set Up the Application
+
+```bash
+# Clone the repository
+cd ~
+git clone https://github.com/YOUR_USERNAME/silldisplay.git
+cd silldisplay
+
+# Edit docker-compose.yml and replace GITHUB_USERNAME with your GitHub username
+nano docker-compose.yml
+# Change: image: ghcr.io/${GITHUB_USERNAME}/silldisplay:latest
+# To: image: ghcr.io/YOUR_ACTUAL_USERNAME/silldisplay:latest
+```
+
+### Step 4: Start the Application
+
+```bash
+# Start the containers
+docker compose up -d
+
+# Check status
+docker compose ps
+
+# View logs
+docker compose logs -f silldisplay
+```
+
+The application will be available at `http://localhost:3000`.
+
+### Step 5: Set Up Auto-Start Chromium in Kiosk Mode
+
+Create/edit the autostart file:
+
+```bash
+mkdir -p ~/.config/lxsession/LXDE-pi
+nano ~/.config/lxsession/LXDE-pi/autostart
+```
+
+Add this line:
+
+```text
+@chromium-browser --kiosk http://localhost:3000 --incognito --noerrdialogs --disable-infobars
+```
+
+### Step 6: Configure Watchtower (Automatic Updates)
+
+Watchtower is already configured in `docker-compose.yml` and will:
+- Check for new images every 5 minutes (300 seconds)
+- Automatically pull and restart containers when updates are available
+- Clean up old images to save space
+
+The Watchtower container monitors the `silldisplay` container and will automatically update it when you push changes to the `main` or `master` branch, or when you create a new release tag.
+
+### Step 7: Verify Everything Works
+
+```bash
+# Reboot the Pi
+sudo reboot
+```
+
+After reboot:
+1. Docker containers should start automatically
+2. Chromium should open in kiosk mode
+3. Watchtower will check for updates every 5 minutes
+
+### Updating the Application
+
+**Automatic Updates**: Watchtower will automatically detect and apply updates when you push **any changes** to GitHub (including changes to `server.mjs`, `public/index.html`, or any other files). The update process works as follows:
+
+1. **You push changes** to the `main` or `master` branch (or create a release tag)
+2. **GitHub Actions** automatically builds a new Docker image that includes all your changes
+3. **The new image** is pushed to GitHub Container Registry (GHCR)
+4. **Watchtower** detects the new image (checks every 5 minutes)
+5. **Watchtower** automatically pulls the new image and restarts the container
+6. **Your Raspberry Pi** now runs the updated code - no manual intervention needed!
+
+**Note**: Changes to `public/index.html`, `server.mjs`, `package.json`, or any other files will all be included in the new Docker image and automatically deployed.
+
+**Manual Update** (if needed):
+
+```bash
+cd ~/silldisplay
+docker compose pull
+docker compose up -d
+```
+
+### Troubleshooting
+
+- **Check container status**: `docker compose ps`
+- **View application logs**: `docker compose logs -f silldisplay`
+- **View Watchtower logs**: `docker compose logs -f watchtower`
+- **Restart containers**: `docker compose restart`
+- **Check if image is accessible**: `docker pull ghcr.io/YOUR_USERNAME/silldisplay:latest`
+
+---
+
+## Manual Deployment
+
+This is the traditional method using systemd. Use this if you prefer not to use Docker.
+
+### Requirements
 
 - Raspberry Pi with **Raspberry Pi OS with Desktop**
 - Internet connection (for reaching the ÖBB API)
@@ -63,13 +230,7 @@ node -v
 npm -v
 ```
 
----
-
-## 2. Clone the Repository on the Raspberry Pi
-
-Pick a folder (e.g. your home directory) and clone your repo.
-
-> 🔁 Replace `<YOUR_GITHUB_URL>` with your actual repository URL.
+### Step 1: Clone the Repository
 
 ```bash
 cd ~
@@ -77,71 +238,23 @@ git clone <YOUR_GITHUB_URL> silldisplay
 cd silldisplay
 ```
 
-If your repo is already named `silldisplay`, you can skip the second argument to `git clone`.
-
----
-
-## 3. Install Dependencies
-
-Inside the project folder:
+### Step 2: Install Dependencies
 
 ```bash
 cd ~/silldisplay
 npm install
 ```
 
-Make sure your `package.json` has at least:
-
-```jsonc
-{
-  "name": "silldisplay",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "server.mjs",
-  "scripts": {
-    "start": "node server.mjs"
-  },
-  "dependencies": {
-    "express": "^4.x",
-    "oebb-api": "^5.x"
-  }
-}
-```
-
-> Adjust versions as needed – `npm install express oebb-api` will fill them in automatically.
-
-If needed, you can (re)install dependencies like this:
-
-```bash
-npm install express oebb-api
-```
-
----
-
-## 4. Test Locally on the Pi
-
-Before automating anything, test that it runs:
+### Step 3: Test Locally
 
 ```bash
 cd ~/silldisplay
 npm start
-# or: node server.mjs
 ```
 
-Open Chromium manually and go to:
+Open Chromium manually and go to `http://localhost:3000`. If it works, stop the server with `Ctrl + C`.
 
-```text
-http://localhost:3000
-```
-
-You should see the SillDisplay board (with times, line, destination and snowflakes).  
-If that works, stop the server with `Ctrl + C` in the terminal and continue.
-
----
-
-## 5. Run as a Service (systemd)
-
-We’ll use `systemd` so the backend starts automatically on boot.
+### Step 4: Run as a Service (systemd)
 
 Create a new service file:
 
@@ -149,7 +262,7 @@ Create a new service file:
 sudo nano /etc/systemd/system/silldisplay.service
 ```
 
-Paste the following (adjust paths if your home directory or folder name is different):
+Paste the following (adjust paths if needed):
 
 ```ini
 [Unit]
@@ -175,81 +288,34 @@ sudo systemctl enable silldisplay.service
 sudo systemctl start silldisplay.service
 ```
 
-Check if it’s running:
+Check if it's running:
 
 ```bash
 sudo systemctl status silldisplay.service
 ```
 
-You should see something like “active (running)” and log output from your server.
-
-If you change `server.mjs` later, just restart:
-
-```bash
-sudo systemctl restart silldisplay.service
-```
-
----
-
-## 6. Auto-Start Chromium in Kiosk Mode
-
-To turn your Pi into a dedicated display, we start Chromium in **kiosk mode** on login.
-
-Create/edit the autostart file:
+### Step 5: Auto-Start Chromium in Kiosk Mode
 
 ```bash
 mkdir -p ~/.config/lxsession/LXDE-pi
 nano ~/.config/lxsession/LXDE-pi/autostart
 ```
 
-Add this line (replace any existing Chromium lines if needed):
+Add this line:
 
 ```text
 @chromium-browser --kiosk http://localhost:3000 --incognito --noerrdialogs --disable-infobars
 ```
 
-This will:
-
-- Open Chromium
-- Load `http://localhost:3000`
-- Hide toolbars and dialogs
-- Run fullscreen
-
----
-
-## 7. Reboot and Verify
-
-Now reboot the Pi:
+### Step 6: Reboot and Verify
 
 ```bash
 sudo reboot
 ```
 
-On boot, the Pi should:
+### Updating the Application (Manual Method)
 
-1. Start the desktop
-2. Start `silldisplay.service` (Node backend)
-3. Launch Chromium in fullscreen, showing your departure board
-
-If anything doesn’t show up:
-
-- Check the service logs:
-
-  ```bash
-  sudo systemctl status silldisplay.service
-  ```
-
-- And view detailed logs:
-
-  ```bash
-  journalctl -u silldisplay.service -e
-  ```
-
----
-
-## 8. Updating the Display Code Later
-
-When you change the code in the GitHub repo and want to update the Pi:
+When you change the code in the GitHub repo:
 
 ```bash
 cd ~/silldisplay
@@ -258,11 +324,9 @@ npm install               # only if you changed dependencies
 sudo systemctl restart silldisplay.service
 ```
 
-The browser will automatically pick up the changes when it reloads or on the next data fetch.
-
 ---
 
-## 9. Development Notes
+## Development Notes
 
 - The backend serves:
   - `/api/journeys` → JSON with departures
@@ -284,7 +348,7 @@ and then open `http://localhost:3000` in a browser.
 
 ---
 
-## 10. Customization Ideas
+## Customization Ideas
 
 - Change the station (different `evaId` in `server.mjs`)
 - Filter only specific lines (e.g. Tram 2 / Tram 5)
