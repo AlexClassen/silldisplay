@@ -1,22 +1,22 @@
 # SillDisplay
 
-SillDisplay is a small Raspberry Pi-powered departure board for **Innsbruck Sillpark**.
-It polls the ÖBB API regularly and shows upcoming trams/buses on a fullscreen web
-display – perfect for running on a monitor or TV via a Raspberry Pi.
+SillDisplay is a small Raspberry Pi-powered departure board for Austrian stations.
+It uses the ÖBB API to search for stations and display live departures – perfect for
+running on a monitor or TV via a Raspberry Pi.
 
-The frontend is a single static `index.html` file (HTML/JS/CSS) and the backend is a
-minimal Node.js/Express server that uses [`oebb-api`](https://github.com/mymro/oebb-api)
-to fetch live data.
+The frontend consists of two pages: a **homepage** with station search and a **station page**
+showing departures. The backend is a minimal Node.js/Express server that uses
+[`oebb-api`](https://github.com/mymro/oebb-api) to fetch live data.
 
 ---
 
 ## Features
 
-- 📡 Live departures from **Innsbruck Sillpark** (using ÖBB station board)
+- 🔍 **Station search** – Search all ÖBB stations by name (e.g. Innsbruck, Wien Hbf)
+- 📡 **Live departures** – Any station’s upcoming trams/buses/trains
 - ⏱ Shows **planned time** and **real-time (delayed) time**
 - 🚌🚋 Badge indicating **Bus** or **Tram**
 - 🔁 Automatic data refresh (backend polling + frontend refresh)
-- 📜 Smooth auto-scrolling departure list for longer boards
 - ❄️ Optional winter mode: **falling snowflakes** for Christmas vibes
 - 🎛 Designed to run in **Chromium kiosk mode** on a Raspberry Pi
 - 🐳 **Docker deployment** with automatic updates via Watchtower
@@ -24,8 +24,6 @@ to fetch live data.
 ---
 
 ## Project Structure
-
-Typical repo structure:
 
 ```text
 silldisplay/
@@ -35,11 +33,13 @@ silldisplay/
 ├── docker-compose.yml
 ├── .github/workflows/docker-build.yml
 └── public/
-    └── index.html
+    ├── index.html      # Homepage: station search
+    └── station.html    # Station page: departure board
 ```
 
-- **`server.mjs`** – Node.js server, uses `oebb-api` to fetch departures and exposes `/api/journeys`
-- **`public/index.html`** – Frontend, fetches `/api/journeys` and renders the display
+- **`server.mjs`** – Node.js server; exposes `/api/stations/search`, `/api/journeys`, and serves the frontend
+- **`public/index.html`** – Homepage with search bar; searches ÖBB stations and links to `/station/:evaId`
+- **`public/station.html`** – Station departure board; loads journeys for the station ID in the URL path
 - **`Dockerfile`** – Container definition for the application
 - **`docker-compose.yml`** – Docker Compose configuration with Watchtower for auto-updates
 
@@ -105,6 +105,7 @@ echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --passwo
 ```
 
 Replace:
+
 - `YOUR_GITHUB_TOKEN` with your PAT
 - `YOUR_GITHUB_USERNAME` with your GitHub username
 
@@ -155,6 +156,7 @@ Add this line:
 ### Step 6: Configure Watchtower (Automatic Updates)
 
 Watchtower is already configured in `docker-compose.yml` and will:
+
 - Check for new images every 5 minutes (300 seconds)
 - Automatically pull and restart containers when updates are available
 - Clean up old images to save space
@@ -169,6 +171,7 @@ sudo reboot
 ```
 
 After reboot:
+
 1. Docker containers should start automatically
 2. Chromium should open in kiosk mode
 3. Watchtower will check for updates every 5 minutes
@@ -328,23 +331,22 @@ sudo systemctl restart silldisplay.service
 
 ## Development Notes
 
-- The backend serves:
-  - `/api/journeys` → JSON with departures
-  - `/` → `public/index.html`
-- The frontend:
-  - Fetches `/api/journeys` every few seconds
-  - Renders each departure as a row/card
-  - Smoothly auto-scrolls the list
-  - Shows falling snowflakes for a Christmas mood
+- **Backend** serves:
+  - `/api/stations/search?q=…` → JSON with matching stations from ÖBB
+  - `/api/journeys?evaId=…` → JSON with departures for a station
+  - `/` → Homepage (station search)
+  - `/station/:evaId` → Station departure board
+- **Homepage**: Search bar, debounced API calls, click a result → redirect to `/station/{evaId}`
+- **Station page**: Reads `evaId` from the URL path, fetches journeys, auto-refreshes every 15 seconds
 
-You can run and debug the project on any machine with Node installed by doing:
+You can run and debug the project on any machine with Node installed:
 
 ```bash
 npm install
 npm start
 ```
 
-and then open `http://localhost:3000` in a browser.
+Then open `http://localhost:3000` in a browser.
 
 ---
 

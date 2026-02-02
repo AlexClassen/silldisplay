@@ -7,13 +7,14 @@ services:
     container_name: silldisplay
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - NODE_ENV=production
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      - 'com.centurylinklabs.watchtower.enable=true'
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/stations"]
+      test:
+        ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:3000/api/stations']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,4 +32,3 @@ services:
       - WATCHTOWER_INCLUDE_STOPPED=true
       - WATCHTOWER_LABEL_ENABLE=true
     command: --interval 300
-

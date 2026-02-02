@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sill Display – Abfahrten</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #020617;
+        color: #e5e7eb;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'SF Pro Text',
+          'Segoe UI',
+          sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      header {
+        padding: 16px 24px 8px;
+        border-bottom: 1px solid #111827;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: relative;
+        z-index: 10;
+        flex-direction: row;
+        gap: 16px;
+      }
+
+      .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1.4rem;
+        font-weight: 600;
+      }
+
+      #station-name {
+        display: block;
+        font-size: 1.1rem;
+        font-weight: 500;
+        opacity: 0.9;
+      }
+
+      .back-link {
+        color: #60a5fa;
+        text-decoration: none;
+        font-size: 0.9rem;
+        margin-top: 4px;
+      }
+
+      .back-link:hover {
+        text-decoration: underline;
+      }
+
+      #updated {
+        font-size: 0.85rem;
+        opacity: 0.7;
+        text-align: right;
+      }
+
+      #current-time {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 1.1rem;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.9;
+      }
+
+      main#scroll-container {
+        flex: 1;
+        padding: 16px 24px;
+        overflow: hidden;
+        position: relative;
+        z-index: 5;
+      }
+
+      .cards {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .card {
+        padding: 14px 18px;
+        border-radius: 12px;
+        background: #030712;
+        border: 1px solid #111827;
+        display: grid;
+        grid-template-columns: 160px 1fr 80px;
+        column-gap: 16px;
+        align-items: center;
+        min-height: 80px;
+      }
+
+      .times {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        align-items: flex-start;
+      }
+
+      .time-main {
+        font-size: 2.2rem;
+        line-height: 1;
+        font-weight: 600;
+      }
+      .time-planned {
+        color: #ffffff;
+      }
+      .time-rt {
+        color: #f97373;
+      }
+
+      .info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-align: left;
+      }
+
+      .line-dest {
+        font-size: 1.1rem;
+        font-weight: 500;
+      }
+
+      .meta {
+        font-size: 0.85rem;
+        opacity: 0.7;
+      }
+
+      .eta {
+        justify-self: flex-end;
+        font-size: 1rem;
+        font-weight: 500;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .eta-soon {
+        color: #22c55e;
+      }
+
+      .eta-now {
+        color: #facc15;
+      }
+
+      .eta-past {
+        color: #9ca3af;
+      }
+
+      .error {
+        color: #f97373;
+        font-size: 1.1rem;
+      }
+
+      .snowflake {
+        position: fixed;
+        top: -10px;
+        color: #ffffff80;
+        font-size: 1rem;
+        pointer-events: none;
+        user-select: none;
+        animation: fall linear;
+        z-index: 20;
+      }
+
+      @keyframes fall {
+        0% {
+          transform: translateY(0) rotate(0deg);
+          opacity: 1;
+        }
+        100% {
+          transform: translateY(110vh) rotate(360deg);
+          opacity: 0.3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-left">
+        <h1>Abfahrten</h1>
+        <span id="station-name">Lade Station…</span>
+        <a href="/" class="back-link">← Zurück zur Suche</a>
+      </div>
+      <div id="current-time">--:--:--</div>
+      <div id="updated">Lade Daten…</div>
+    </header>
+
+    <main id="scroll-container">
+      <div id="cards" class="cards"></div>
+    </main>
+
+    <script>
+      const REFRESH_MS = 15_000;
+
+      function getEvaIdFromPath() {
+        const match = window.location.pathname.match(/^\/station\/(\d+)/);
+        return match ? match[1] : null;
+      }
+
+      function updateClock() {
+        const clockEl = document.getElementById('current-time');
+        const now = new Date();
+        clockEl.textContent = now.toLocaleTimeString('de-AT', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+      }
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      function parseTimeToDate(dateStr, timeStr) {
+        if (!timeStr) return null;
+        const [h, m] = timeStr.split(':').map(Number);
+        if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+        const now = new Date();
+        let d;
+
+        if (dateStr) {
+          const parts = String(dateStr)
+            .trim()
+            .split(/[.\/\-]/);
+          if (parts.length >= 3) {
+            const day = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10) - 1;
+            const year = parseInt(parts[2], 10);
+            if (!Number.isNaN(day) && !Number.isNaN(month) && !Number.isNaN(year)) {
+              d = new Date(year, month, day);
+            }
+          }
+          if (!d || Number.isNaN(d.getTime())) {
+            d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          }
+        } else {
+          d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        }
+
+        d.setHours(h, m, 0, 0);
+
+        if (d.getTime() < now.getTime() && h < 6) {
+          d.setDate(d.getDate() + 1);
+        }
+        return d;
+      }
+
+      function formatEtaMinutes(diffMin) {
+        if (diffMin >= 60) {
+          const h = Math.floor(diffMin / 60);
+          const m = diffMin % 60;
+          if (m === 0) return h === 1 ? 'in 1 Stunde' : `in ${h} Stunden`;
+          return h === 1 ? `in 1 Stunde ${m} Min` : `in ${h} Stunden ${m} Min`;
+        }
+        if (diffMin === 1) return 'in 1 Min';
+        return `in ${diffMin} Min`;
+      }
+
+      function formatEta(journey) {
+        const targetTime =
+          journey.status === 'delayed' && journey.realtimeTime
+            ? journey.realtimeTime
+            : journey.departure;
+
+        const dt = parseTimeToDate(journey.date, targetTime);
+        if (!dt) return { text: '–', className: '' };
+
+        const now = new Date();
+        const diffMs = dt.getTime() - now.getTime();
+        const diffMin = Math.round(diffMs / 60000);
+
+        if (diffMin <= -1) {
+          return { text: 'abgefahren', className: 'eta-past' };
+        } else if (diffMin === 0) {
+          return { text: 'jetzt', className: 'eta-now' };
+        } else if (diffMin <= 5) {
+          return { text: formatEtaMinutes(diffMin), className: 'eta-soon' };
+        } else {
+          return { text: formatEtaMinutes(diffMin), className: '' };
+        }
+      }
+
+      async function loadJourneysForStation(evaId) {
+        const updatedEl = document.getElementById('updated');
+        const cardsEl = document.getElementById('cards');
+        const stationNameEl = document.getElementById('station-name');
+
+        try {
+          const res = await fetch(`/api/journeys?evaId=${encodeURIComponent(evaId)}`);
+          const data = await res.json();
+
+          cardsEl.innerHTML = '';
+
+          if (!res.ok) {
+            cardsEl.innerHTML = `<div class="error">${data.message || data.error || 'Fehler'}</div>`;
+            return;
+          }
+
+          if (data.stationName) {
+            stationNameEl.textContent = data.stationName;
+          }
+
+          const journeys = data.journeys || [];
+
+          journeys.forEach((j) => {
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const times = document.createElement('div');
+            times.className = 'times';
+
+            const planned = document.createElement('div');
+            planned.className = 'time-main time-planned';
+            planned.textContent = j.departure || '--:--';
+            times.appendChild(planned);
+
+            if (j.status === 'delayed' && j.realtimeTime && j.realtimeTime !== j.departure) {
+              const rt = document.createElement('div');
+              rt.className = 'time-main time-rt';
+              rt.textContent = j.realtimeTime;
+              times.appendChild(rt);
+            }
+
+            const info = document.createElement('div');
+            info.className = 'info';
+
+            const lineDest = document.createElement('div');
+            lineDest.className = 'line-dest';
+            const destText = (j.to || '').replace(/^Innsbruck\s*/i, '');
+            lineDest.textContent = `${j.tram || ''}: ${destText || '–'}`;
+
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = `ab ${j.from || ''} · ${j.date || ''}`;
+
+            info.appendChild(lineDest);
+            info.appendChild(meta);
+
+            const etaInfo = formatEta(j);
+            const etaEl = document.createElement('div');
+            etaEl.className = 'eta ' + etaInfo.className;
+            etaEl.textContent = etaInfo.text;
+
+            card.appendChild(times);
+            card.appendChild(info);
+            card.appendChild(etaEl);
+
+            cardsEl.appendChild(card);
+          });
+
+          updatedEl.textContent =
+            'Zuletzt aktualisiert: ' +
+            new Date(data.updatedAt || Date.now()).toLocaleTimeString('de-AT', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            });
+        } catch (err) {
+          cardsEl.innerHTML = '<div class="error">Fehler beim Laden.</div>';
+        }
+      }
+
+      function init() {
+        const evaId = getEvaIdFromPath();
+        if (!evaId) {
+          window.location.href = '/';
+          return;
+        }
+
+        loadJourneysForStation(evaId);
+        setInterval(() => loadJourneysForStation(evaId), REFRESH_MS);
+      }
+
+      init();
+
+      /* Snowflakes */
+      const snowContainer = document.createElement('div');
+      document.body.appendChild(snowContainer);
+
+      function createSnowflake() {
+        const snowflake = document.createElement('div');
+        snowflake.className = 'snowflake';
+        snowflake.textContent = '❄';
+
+        snowflake.style.left = Math.random() * 100 + 'vw';
+        snowflake.style.fontSize = 0.6 + Math.random() * 1.4 + 'rem';
+        const duration = 4 + Math.random() * 6;
+        snowflake.style.animationDuration = duration + 's';
+        snowContainer.appendChild(snowflake);
+
+        setTimeout(() => snowflake.remove(), duration * 1000);
+      }
+
+      setInterval(createSnowflake, 300);
+    </script>
+  </body>
+</html>

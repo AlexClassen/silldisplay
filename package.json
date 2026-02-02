@@ -4,11 +4,16 @@
   "type": "module",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  },
   "dependencies": {
     "express": "^5.1.0",
     "oebb": "^1.0.0",
