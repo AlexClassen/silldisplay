@@ -29,6 +29,7 @@ showing departures. The backend is a minimal Node.js/Express server that uses
 silldisplay/
 ├── package.json
 ├── server.mjs
+├── setup-raspberry-pi.sh   # One-command Raspberry Pi setup
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .github/workflows/docker-build.yml
@@ -65,7 +66,28 @@ This is the recommended method for Raspberry Pi 5. It uses Docker and Watchtower
 - Docker and Docker Compose installed
 - GitHub repository with GitHub Actions enabled
 
-### Step 1: Install Docker on Raspberry Pi
+### Automated Setup (Recommended)
+
+Use the setup script to configure everything with one command. Run from the repo directory:
+
+```bash
+cd ~/silldisplay
+chmod +x setup-raspberry-pi.sh
+./setup-raspberry-pi.sh <STATION_ID>
+```
+
+Example: `./setup-raspberry-pi.sh 8100108` opens Innsbruck Hauptbahnhof on boot.
+
+The script will:
+- Install Docker and Docker Compose if needed
+- Start the application
+- Configure Chromium kiosk mode to open `http://localhost:3000/station/<STATION_ID>`
+- Disable screen blanking
+- Ensure everything starts on reboot
+
+Reboot when done: `sudo reboot`
+
+### Manual Setup – Step 1: Install Docker on Raspberry Pi
 
 ```bash
 # Update system
