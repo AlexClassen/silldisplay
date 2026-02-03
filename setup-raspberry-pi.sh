@@ -67,8 +67,15 @@ if ! docker compose version &>/dev/null; then
   sudo apt-get install -y docker-compose-plugin
 fi
 
-# --- Start the application ---
+# --- Pull or build and start the application ---
 echo "Starting Sill Display..."
+if docker compose pull 2>/dev/null; then
+  echo "Image pulled from registry."
+else
+  echo "Could not pull from registry, building from source..."
+  docker compose build
+fi
+
 docker compose up -d
 
 echo "Waiting for application to be ready..."

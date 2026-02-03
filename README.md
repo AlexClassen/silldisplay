@@ -80,10 +80,12 @@ Example: `./setup-raspberry-pi.sh 8100108` opens Innsbruck Hauptbahnhof on boot.
 
 The script will:
 - Install Docker and Docker Compose if needed
-- Start the application
+- Pull the image and start the application
 - Configure Chromium kiosk mode to open `http://localhost:3000/station/<STATION_ID>`
 - Disable screen blanking
 - Ensure everything starts on reboot
+
+**If you get `denied` when pulling:** The script will build from source instead (slower first run). Or make the package public / log in to GHCR (see Step 2).
 
 Reboot when done: `sudo reboot`
 
@@ -113,23 +115,23 @@ docker compose version
 
 ### Step 2: Configure GitHub Container Registry Access
 
-The Docker image will be built and pushed to GitHub Container Registry (GHCR) automatically via GitHub Actions. On your Raspberry Pi, you need to authenticate to pull the image.
+If you get `denied` when pulling the image, the package is private. Choose one:
 
-1. **Create a GitHub Personal Access Token (PAT)**:
-   - Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
-   - Generate a new token with `read:packages` permission
-   - Copy the token
+#### Option A: Make the package public (easiest, no login on Pi)
 
-2. **Login to GHCR on your Raspberry Pi**:
+1. Go to **GitHub → Your profile → Packages → silldisplay** (or your fork) → **Package settings**
+2. Or: GitHub → Your profile → **Packages** → **silldisplay** → **Package settings**
+3. Under **Danger Zone**, click **Change visibility** → **Public**
+4. No login needed on the Raspberry Pi
+
+#### Option B: Log in to GHCR on the Raspberry Pi
+
+1. Create a GitHub Personal Access Token (classic) with `read:packages`
+2. On the Pi:
 
 ```bash
-echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u alexclassen --password-stdin
 ```
-
-Replace:
-
-- `YOUR_GITHUB_TOKEN` with your PAT
-- `YOUR_GITHUB_USERNAME` with your GitHub username
 
 ### Step 3: Set Up the Application
 
@@ -221,6 +223,7 @@ docker compose up -d
 
 ### Troubleshooting
 
+- **`denied` when pulling**: The setup script will automatically build from source. Or make the package public / log in to GHCR (Step 2)
 - **Check container status**: `docker compose ps`
 - **View application logs**: `docker compose logs -f silldisplay`
 - **View Watchtower logs**: `docker compose logs -f watchtower`

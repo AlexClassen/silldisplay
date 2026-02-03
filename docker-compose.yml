@@ -1,6 +1,7 @@
 services:
   silldisplay:
     image: ghcr.io/alexclassen/silldisplay:latest
+    build: .
     container_name: silldisplay
     restart: unless-stopped
     ports:
