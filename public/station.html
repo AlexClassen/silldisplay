@@ -101,6 +101,11 @@
         overflow: auto;
         position: relative;
         z-index: 5;
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      main#scroll-container::-webkit-scrollbar {
+        display: none;
       }
 
       .cards {
