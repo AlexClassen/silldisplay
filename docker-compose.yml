@@ -1,9 +1,6 @@
-version: '3.8'
-
 services:
   silldisplay:
-    # Replace YOUR_GITHUB_USERNAME with your actual GitHub username
-    image: ghcr.io/AlexClassen/silldisplay:latest
+    image: ghcr.io/alexclassen/silldisplay:latest
     container_name: silldisplay
     restart: unless-stopped
     ports:
